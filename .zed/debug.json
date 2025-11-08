@@ -1,0 +1,9 @@
+[
+  {
+    "label": "Run Consumer",
+    "adapter": "Delve",
+    "request": "launch",
+    "mode": "debug",
+    "program": "./cmd/consumer/main.go"
+  }
+]

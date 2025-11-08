@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -8,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	wb "github.com/webhook-processor/internal/webhook/domain"
+	wb_usecase "github.com/webhook-processor/internal/webhook/usecase"
+
 	amqp "github.com/rabbitmq/amqp091-go"
-	email_model "github.com/webhook-processor/internal/shared/email/model"
+	env "github.com/webhook-processor/internal/shared/env"
 	log "github.com/webhook-processor/internal/shared/logger"
-	"github.com/webhook-processor/shared/env"
 )
 
 func main() {
@@ -21,8 +24,9 @@ func main() {
 			Level:  env.GetEnvOrDefault("LOG_LEVEL", "debug"),
 		},
 	)
+	logger.SetAsDefaultForPackage()
 
-	logger.Info("Starting Webhook Processor Consumer...")
+	log.Info("Starting Webhook Processor Consumer...")
 
 	url := fmt.Sprintf("amqp://%s:%s@%s:%d/%s",
 		"admin",
@@ -44,12 +48,12 @@ func main() {
 	defer ch.Close()
 
 	q, err := ch.QueueDeclare(
-		email_model.EMAIL_QUEUE, // name
-		true,                    // durable
-		false,                   // delete when unused
-		false,                   // exclusive
-		false,                   // no-wait
-		nil,                     // arguments
+		wb.WEBHOOK_QUEUE, // name
+		true,             // durable
+		false,            // delete when unused
+		false,            // exclusive
+		false,            // no-wait
+		nil,              // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
 
@@ -66,54 +70,66 @@ func main() {
 
 	go func() {
 		for d := range msgs {
-			logger.Info("Received a message: %s", d.Body)
-			err := d.Ack(false)
+			log.Info("Received a message: %s", d.Body)
+			wbEvent := wb.WebhookEventMessage{}
+			err := json.Unmarshal(d.Body, &wbEvent)
 			if err != nil {
-				logger.Error("Error acknowledging message", err)
+				err = d.Ack(false)
+				if err != nil {
+					log.Error("Error acknowledging message", err)
+				}
+				continue
+			}
+			success, _ := wb_usecase.SendWebhook(wbEvent)
+			if success {
+				fmt.Println("Webhook sent successfully")
+				err = d.Ack(false)
+				if err != nil {
+					log.Error("Error acknowledging message", err)
+				}
+			} else {
+				err = d.Nack(false, true)
+				if err != nil {
+					log.Error("Error nacking message", err)
+				}
 			}
 		}
 	}()
 
-	// go startHealthCheck(consumeCtx, broker, logger)
+	go startHealthCheck(ch)
 
-	logger.Info("waiting for messages...")
+	log.Info("waiting for messages...")
 
 	// graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
-	logger.Info("Shutdown signal received, stopping consumer...")
+	log.Info("Shutdown signal received, stopping consumer...")
 
 	shutdownTimeout := 10 * time.Second
-	logger.Info("Waiting for graceful shutdown", "timeout", shutdownTimeout)
+	log.Info("Waiting for graceful shutdown", "timeout", shutdownTimeout)
 	time.Sleep(shutdownTimeout)
 
 	if err := conn.Close(); err != nil {
-		logger.Error("Error closing broker connection", err)
+		log.Error("Error closing broker connection", err)
 	}
 
-	logger.Info("Consumer stopped successfully")
+	log.Info("Consumer stopped successfully")
 }
 
-// func startHealthCheck(ctx context.Context, broker ports.MessageBroker, logger ports.Logger) {
-// 	ticker := time.NewTicker(30 * time.Second)
-// 	defer ticker.Stop()
+func startHealthCheck(ch *amqp.Channel) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			logger.Info("Health check routine stopped")
-// 			return
-
-// 		case <-ticker.C:
-// 			if !broker.IsConnected() {
-// 				logger.Error("Health check failed: broker not connected", nil)
-// 			} else {
-// 				logger.Debug("Health check passed: broker connected")
-// 			}
-// 		}
-// 	}
-// }
+	for {
+		<-ticker.C
+		if ch.IsClosed() {
+			log.Error("Health check failed: broker not connected", nil)
+		} else {
+			log.Debug("Health check passed: broker connected")
+		}
+	}
+}
 
 func failOnError(err error, msg string) {
 	if err != nil {

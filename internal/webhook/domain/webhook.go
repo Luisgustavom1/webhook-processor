@@ -2,6 +2,9 @@ package domain
 
 import (
 	"time"
+
+	"github.com/lib/pq"
+	"gorm.io/datatypes"
 )
 
 const WEBHOOK_QUEUE = "email_queue"
@@ -15,15 +18,15 @@ const (
 )
 
 type Webhook struct {
-	Id               string        `json:"id"`
-	SubscribedEvents []string      `json:"subscribed_events"`
-	CallbackURL      string        `json:"callback_url"`
-	Secret           string        `json:"secret"`
-	Status           WebhookStatus `json:"status"`
-	FailureCount     int           `json:"failure_count"`
-	LastFailureAt    time.Time     `json:"last_failure_at"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
+	Id               int            `json:"id"`
+	FailureCount     int            `json:"failure_count"`
+	CallbackURL      string         `json:"callback_url"`
+	Secret           string         `json:"secret"`
+	Status           WebhookStatus  `json:"status"`
+	LastFailureAt    time.Time      `json:"last_failure_at"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	SubscribedEvents pq.StringArray `json:"subscribed_events" gorm:"type:text[]"`
 }
 
 type WebhookEventsStatus string
@@ -35,19 +38,26 @@ const (
 	WebhookEventsStatusDeadLetter WebhookEventsStatus = "dead_letter"
 )
 
+type object = map[string]interface{}
+
 type WebhookEvent struct {
-	Id           string                 `json:"id"`
-	EventType    string                 `json:"event_type"`
-	Payload      map[string]interface{} `json:"payload"`
-	LastError    map[string]interface{} `json:"last_error"`
-	ResponseBody map[string]interface{} `json:"response_body"`
-	ResponseCode int                    `json:"response_code"`
-	RetriesCount int                    `json:"retries_count"`
-	Status       WebhookEventsStatus    `json:"status"`
-	FailedAt     time.Time              `json:"failed_at,omitempty"`
-	DeliveredAt  time.Time              `json:"delivered_at,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	Id           string                     `json:"id"`
+	WebhookId    int                        `json:"webhook_id"`
+	EventType    string                     `json:"event_type"`
+	Payload      datatypes.JSONType[object] `json:"payload"`
+	LastError    datatypes.JSONType[object] `json:"last_error"`
+	ResponseBody datatypes.JSONType[object] `json:"response_body"`
+	ResponseCode int                        `json:"response_code"`
+	RetriesCount int                        `json:"retries_count"`
+	Status       WebhookEventsStatus        `json:"status"`
+	FailedAt     time.Time                  `json:"failed_at,omitempty"`
+	DeliveredAt  time.Time                  `json:"delivered_at,omitempty"`
+	CreatedAt    time.Time                  `json:"created_at"`
+	UpdatedAt    time.Time                  `json:"updated_at"`
+}
+
+type WebhookEventMessage struct {
+	Id string `json:"id"`
 }
 
 func NewWebhookEvent(wb WebhookEvent) *WebhookEvent {
@@ -75,9 +85,9 @@ func (wb *WebhookEvent) ReachedMaxAttempts() bool {
 	return wb.RetriesCount >= MAX_WEBHOOK_SEND_ATTEMPTS
 }
 
-func (wb *WebhookEvent) CheckSuccessResponse() bool {
+func (wb *WebhookEvent) CheckSuccessResponse(code int) bool {
 	// any 2xx is a success
-	return wb.ResponseCode/100 == 2
+	return code/100 == 2
 }
 
 func (wb *WebhookEvent) MarkAsDelivered() {
@@ -86,7 +96,7 @@ func (wb *WebhookEvent) MarkAsDelivered() {
 }
 
 func (wb *WebhookEvent) MarkAsFailed(error map[string]interface{}) {
-	wb.LastError = error
+	wb.LastError = datatypes.NewJSONType(error)
 	wb.Status = WebhookEventsStatusFailed
 	wb.FailedAt = time.Now()
 }

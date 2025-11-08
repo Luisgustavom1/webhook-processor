@@ -39,20 +39,20 @@ func NewLogger(options *NewLoggerOptions) *Logger {
 	}
 }
 
-func (l *Logger) Debug(msg string, args ...any) {
-	l.s.Debug(msg, args...)
+func Debug(msg string, args ...any) {
+	slog.Debug(msg, args...)
 }
 
-func (l *Logger) Info(msg string, args ...any) {
-	l.s.Info(msg, args...)
+func Info(msg string, args ...any) {
+	slog.Info(msg, args...)
 }
 
-func (l *Logger) Warn(msg string, args ...any) {
-	l.s.Warn(msg, args...)
+func Warn(msg string, args ...any) {
+	slog.Warn(msg, args...)
 }
 
-func (l *Logger) Error(msg string, args ...any) {
-	l.s.Error(msg, args...)
+func Error(msg string, args ...any) {
+	slog.Error(msg, args...)
 }
 
 func (l *Logger) SetAsDefaultForPackage() {
