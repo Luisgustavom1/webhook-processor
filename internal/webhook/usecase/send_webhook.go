@@ -42,8 +42,8 @@ func SendWebhook(db *gorm.DB, msg domain.WebhookEventMessage) (bool, error.Error
 		errMsg := result.Error.Error()
 		if errMsg == "record not found" {
 			log.Printf("no webhook found with id %s\n", event.Id)
-			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-				"error": "webhook not found",
+			return false, domain.ErrWebhookEventNotFound(map[string]interface{}{
+				"id": event.Id,
 			})
 		}
 
@@ -73,7 +73,7 @@ func SendWebhook(db *gorm.DB, msg domain.WebhookEventMessage) (bool, error.Error
 	if result.Error != nil {
 		if result.Error.Error() == "record not found" {
 			log.Printf("no webhook found with id %s\n", event.Id)
-			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+			return false, domain.ErrWebhookEventNotFound(map[string]interface{}{
 				"error": "webhook not found",
 			})
 		}
@@ -81,6 +81,12 @@ func SendWebhook(db *gorm.DB, msg domain.WebhookEventMessage) (bool, error.Error
 		log.Fatalf("query error: %v\n", result.Error)
 		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
 			"error": result.Error.Error(),
+		})
+	}
+
+	if !wb.IsActive() {
+		return false, domain.ErrWebhookIsDisabled(map[string]interface{}{
+			"error": "webhook is not active",
 		})
 	}
 

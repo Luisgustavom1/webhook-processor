@@ -5,6 +5,15 @@ import (
 )
 
 var (
+	// webhook
+	ErrWebhookNotFound = func(args ...interface{}) error.Error {
+		return error.New("webhook not found", args...)
+	}
+	ErrWebhookIsDisabled = func(args ...interface{}) error.Error {
+		return error.New("webhook is disabled", args...)
+	}
+
+	// webhook event
 	ErrWebhookEventNotPending = func(args ...interface{}) error.Error {
 		return error.New("webhook event is not pending", args...)
 	}
@@ -16,5 +25,8 @@ var (
 	}
 	ErrWebhookEventDeliveryFailed = func(args ...interface{}) error.Error {
 		return error.New("webhook event delivery failed", args...)
+	}
+	ErrWebhookEventNotFound = func(args ...interface{}) error.Error {
+		return error.New("webhook event not found", args...)
 	}
 )
