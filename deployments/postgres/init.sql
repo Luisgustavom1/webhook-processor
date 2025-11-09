@@ -15,7 +15,7 @@ CREATE TABLE webhooks (
 );
 
 CREATE TABLE webhook_events (
-    id               TEXT PRIMARY KEY,
+    id               VARCHAR(26) PRIMARY KEY,
     webhook_id       INTEGER NOT NULL REFERENCES webhooks(id),
     event_type       TEXT NOT NULL,
     payload          JSONB NOT NULL,
