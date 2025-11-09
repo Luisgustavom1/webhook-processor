@@ -15,6 +15,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	env "github.com/webhook-processor/internal/shared/env"
 	log "github.com/webhook-processor/internal/shared/logger"
+	"github.com/webhook-processor/internal/shared/persistence/gorm"
 )
 
 func main() {
@@ -25,6 +26,14 @@ func main() {
 		},
 	)
 	logger.SetAsDefaultForPackage()
+
+	db := gorm.NewDB(gorm.DbOptions{
+		Host:     env.GetEnvOrDefault("POSTGRES_HOST", "localhost"),
+		DbName:   env.GetEnvOrDefault("POSTGRES_DB", "webhook_processor"),
+		User:     env.GetEnvOrDefault("POSTGRES_USER", "webhook_user"),
+		Password: env.GetEnvOrDefault("POSTGRES_PASSWORD", "webhook_pass"),
+		Schema:   env.GetEnvOrDefault("POSTGRES_SCHEMA", "webhooks"),
+	})
 
 	log.Info("Starting Webhook Processor Consumer...")
 
@@ -80,7 +89,7 @@ func main() {
 				}
 				continue
 			}
-			success, _ := wb_usecase.SendWebhook(wbEvent)
+			success, _ := wb_usecase.SendWebhook(db, wbEvent)
 			if success {
 				fmt.Println("Webhook sent successfully")
 				err = d.Ack(false)

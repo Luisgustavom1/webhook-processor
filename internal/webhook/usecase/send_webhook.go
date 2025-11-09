@@ -4,30 +4,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
+	"net"
 	"time"
 
 	// todo: not use gorm here
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 
 	error "github.com/webhook-processor/internal/shared/error"
-	"github.com/webhook-processor/internal/webhook/domain"
-
-	"github.com/webhook-processor/internal/shared/env"
 	"github.com/webhook-processor/internal/shared/http"
-	"github.com/webhook-processor/internal/shared/persistence/gorm"
+	"github.com/webhook-processor/internal/webhook/domain"
 )
 
-func SendWebhook(msg domain.WebhookEventMessage) (bool, error.Error) {
-	db := gorm.NewDB(gorm.DbOptions{
-		Host:     env.GetEnvOrDefault("POSTGRES_HOST", "localhost"),
-		DbName:   env.GetEnvOrDefault("POSTGRES_DB", "webhook_processor"),
-		User:     env.GetEnvOrDefault("POSTGRES_USER", "webhook_user"),
-		Password: env.GetEnvOrDefault("POSTGRES_PASSWORD", "webhook_pass"),
-		Schema:   env.GetEnvOrDefault("POSTGRES_SCHEMA", "webhooks"),
-	})
-
+func SendWebhook(db *gorm.DB, msg domain.WebhookEventMessage) (bool, error.Error) {
 	ctx := context.Background()
 
 	tx := db.WithContext(ctx).Begin()
@@ -37,22 +29,27 @@ func SendWebhook(msg domain.WebhookEventMessage) (bool, error.Error) {
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+		} else {
+			if err := tx.Commit().Error; err != nil {
+				log.Fatalf("failed to commit transaction: %v\n", err)
+			}
 		}
 	}()
 
 	event := domain.WebhookEvent{}
 	result := tx.Model(&domain.WebhookEvent{}).Where("id = ?", msg.Id).First(&event)
 	if result.Error != nil {
-		if result.Error.Error() == "record not found" {
+		errMsg := result.Error.Error()
+		if errMsg == "record not found" {
 			log.Printf("no webhook found with id %s\n", event.Id)
 			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
 				"error": "webhook not found",
 			})
 		}
 
-		log.Fatalf("query error: %v\n", result.Error)
+		log.Printf("query error: %v\n", errMsg)
 		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": result.Error.Error(),
+			"error": errMsg,
 		})
 	}
 
@@ -104,37 +101,47 @@ func SendWebhook(msg domain.WebhookEventMessage) (bool, error.Error) {
 
 	event.RetriesCount++
 
+	var responseBody map[string]interface{}
+
 	// TODO: treat timeout error
-	httpClient := http.NewClient(http.ClientOpts{Timeout: time.Second * 5})
+	httpClient := http.NewClient(http.ClientOpts{Timeout: time.Millisecond})
 	res, err := httpClient.Post(wb.CallbackURL, "application/json", reader)
 	if err != nil {
-		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			responseBody = map[string]interface{}{
+				"error": "timeout",
+				"cause": err.Error(),
+			}
+			event.ResponseCode = 408
+		} else {
+			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	} else if responseBody == nil {
+		resBodyBuffer, err := io.ReadAll(res.Body)
+		if err != nil {
+			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+
+		err = json.Unmarshal(resBodyBuffer, &responseBody)
+		if err != nil {
+			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+		defer res.Body.Close()
+
+		event.ResponseCode = res.StatusCode
+		event.ResponseBody = datatypes.NewJSONType(responseBody)
 	}
-	defer res.Body.Close()
 
-	resBodyBuffer, err := io.ReadAll(res.Body)
-	if err != nil {
-		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
-
-	var responseBody map[string]interface{}
-	err = json.Unmarshal(resBodyBuffer, &responseBody)
-	if err != nil {
-		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
-
-	event.ResponseCode = res.StatusCode
-	event.ResponseBody = datatypes.NewJSONType(responseBody)
-
-	webhookWasSent := event.CheckSuccessResponse(res.StatusCode)
+	webhookWasSent := event.CheckSuccessResponse(event.ResponseCode)
 	if !webhookWasSent {
-		event.MarkAsFailed(event.ResponseBody.Data())
+		event.MarkAsFailed(responseBody)
 
 		if res := tx.Model(&domain.WebhookEvent{}).Where("id = ?", event.Id).Updates(domain.WebhookEvent{
 			Status:       event.Status,
@@ -146,14 +153,6 @@ func SendWebhook(msg domain.WebhookEventMessage) (bool, error.Error) {
 			log.Fatalf("update error: %v\n", res.Error)
 			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
 				"error": res.Error.Error(),
-			})
-		}
-
-		err := tx.Commit().Error
-		if err != nil {
-			log.Fatalf("commit error: %v\n", err)
-			return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-				"error": err.Error(),
 			})
 		}
 
@@ -172,14 +171,6 @@ func SendWebhook(msg domain.WebhookEventMessage) (bool, error.Error) {
 		log.Fatalf("update error: %v\n", res.Error)
 		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
 			"error": res.Error.Error(),
-		})
-	}
-
-	err = tx.Commit().Error
-	if err != nil {
-		log.Fatalf("commit error: %v\n", err)
-		return false, domain.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
 		})
 	}
 
