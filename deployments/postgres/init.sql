@@ -22,7 +22,7 @@ CREATE TABLE webhook_events (
     last_error       JSONB,
     response_body    JSONB,
     response_code    INTEGER,
-    retries_count    INTEGER NOT NULL DEFAULT 0,
+    trie             INTEGER NOT NULL DEFAULT 0,
     status           TEXT NOT NULL,
     failed_at        TIMESTAMPTZ,
     delivered_at     TIMESTAMPTZ,

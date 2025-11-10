@@ -1,4 +1,4 @@
-package domain
+package model
 
 import (
 	error "github.com/webhook-processor/internal/shared/error"

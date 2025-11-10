@@ -9,8 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	wb "github.com/webhook-processor/internal/webhook/domain"
-	wb_usecase "github.com/webhook-processor/internal/webhook/usecase"
+	wb_repo "github.com/webhook-processor/internal/webhook/adapters/repo"
+	wb_model "github.com/webhook-processor/internal/webhook/domain/model"
+	wb "github.com/webhook-processor/internal/webhook/domain/service"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	env "github.com/webhook-processor/internal/shared/env"
@@ -57,12 +58,12 @@ func main() {
 	defer ch.Close()
 
 	q, err := ch.QueueDeclare(
-		wb.WEBHOOK_QUEUE, // name
-		true,             // durable
-		false,            // delete when unused
-		false,            // exclusive
-		false,            // no-wait
-		nil,              // arguments
+		wb_model.WEBHOOK_QUEUE, // name
+		true,                   // durable
+		false,                  // delete when unused
+		false,                  // exclusive
+		false,                  // no-wait
+		nil,                    // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
 
@@ -77,10 +78,13 @@ func main() {
 	)
 	failOnError(err, "Failed to register a consumer")
 
+	repo := wb_repo.NewWebhookRepo(db)
+	wb_service := wb.NewWebhookService(repo)
+
 	go func() {
 		for d := range msgs {
 			log.Info("Received a message: %s", d.Body)
-			wbEvent := wb.WebhookEventMessage{}
+			wbEvent := wb_model.WebhookEventMessage{}
 			err := json.Unmarshal(d.Body, &wbEvent)
 			if err != nil {
 				err = d.Ack(false)
@@ -89,7 +93,7 @@ func main() {
 				}
 				continue
 			}
-			success, _ := wb_usecase.SendWebhook(db, wbEvent)
+			success, _ := wb_service.SendWebhook(wbEvent)
 			if success {
 				fmt.Println("Webhook sent successfully")
 				err = d.Ack(false)

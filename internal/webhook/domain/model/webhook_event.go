@@ -1,4 +1,4 @@
-package domain
+package model
 
 import (
 	"time"
@@ -29,7 +29,7 @@ type WebhookEvent struct {
 	LastError    datatypes.JSONType[object] `json:"last_error"`
 	ResponseBody datatypes.JSONType[object] `json:"response_body"`
 	ResponseCode int                        `json:"response_code"`
-	RetriesCount int                        `json:"retries_count"`
+	Tries        int                        `json:"tries"`
 	Status       WebhookEventsStatus        `json:"status"`
 	FailedAt     time.Time                  `json:"failed_at,omitempty"`
 	DeliveredAt  time.Time                  `json:"delivered_at,omitempty"`
@@ -42,7 +42,7 @@ func (wb *WebhookEvent) IsPending() bool {
 }
 
 func (wb *WebhookEvent) ReachedMaxAttempts() bool {
-	return wb.RetriesCount >= MAX_WEBHOOK_SEND_ATTEMPTS
+	return wb.Tries >= MAX_WEBHOOK_SEND_ATTEMPTS
 }
 
 func (wb *WebhookEvent) CheckSuccessResponse(code int) bool {
@@ -59,4 +59,8 @@ func (wb *WebhookEvent) MarkAsFailed(error map[string]interface{}) {
 	wb.LastError = datatypes.NewJSONType(error)
 	wb.Status = WebhookEventsStatusFailed
 	wb.FailedAt = time.Now()
+}
+
+func (wb *WebhookEvent) SetResponseBody(responseBody object) {
+	wb.ResponseBody = datatypes.NewJSONType(responseBody)
 }
