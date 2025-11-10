@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -9,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	wb_queue "github.com/webhook-processor/internal/webhook/adapters/queue"
 	wb_repo "github.com/webhook-processor/internal/webhook/adapters/repo"
 	wb_model "github.com/webhook-processor/internal/webhook/domain/model"
 	wb "github.com/webhook-processor/internal/webhook/domain/service"
@@ -80,32 +80,11 @@ func main() {
 
 	repo := wb_repo.NewWebhookRepo(db)
 	wb_service := wb.NewWebhookService(repo)
+	rabbitMQConsumer := wb_queue.NewRabbitMQConsumer(wb_service)
 
 	go func() {
 		for d := range msgs {
-			log.Info("Received a message: %s", d.Body)
-			wbEvent := wb_model.WebhookEventMessage{}
-			err := json.Unmarshal(d.Body, &wbEvent)
-			if err != nil {
-				err = d.Ack(false)
-				if err != nil {
-					log.Error("Error acknowledging message", err)
-				}
-				continue
-			}
-			success, _ := wb_service.SendWebhook(wbEvent)
-			if success {
-				fmt.Println("Webhook sent successfully")
-				err = d.Ack(false)
-				if err != nil {
-					log.Error("Error acknowledging message", err)
-				}
-			} else {
-				err = d.Nack(false, true)
-				if err != nil {
-					log.Error("Error nacking message", err)
-				}
-			}
+			rabbitMQConsumer.Consume(d)
 		}
 	}()
 
