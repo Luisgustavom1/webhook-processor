@@ -34,6 +34,7 @@ func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) *model.Webho
 	}
 
 	if !event.IsPending() {
+		log.Info("webhook not is pending", "status", event.Status)
 		return model.ErrWebhookEventNotPending(map[string]interface{}{
 			"status": event.Status,
 		})
