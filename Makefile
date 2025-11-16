@@ -45,7 +45,7 @@ run-consumer:
 
 docker-up:
 	@echo "🐳 Starting Docker services..."
-	cd deployments && docker compose up
+	cd deployments && docker compose up --build
 	@echo "⏳ Waiting for services to be ready..."
 	@sleep 10
 	@echo "✅ Docker services started"
