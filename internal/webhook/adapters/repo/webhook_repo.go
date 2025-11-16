@@ -44,18 +44,25 @@ func (r *WebhookRepo) UpdateWebhookEventById(ctx context.Context, id string, eve
 	return r.getDb(ctx).Model(&model.WebhookEvent{}).Where("id = ?", id).Updates(event).Error
 }
 
-func (r *WebhookRepo) Transaction(ctx context.Context) Transaction {
+func (r *WebhookRepo) Transaction(ctx *context.Context) MyTransaction {
 	trx := r.db.Begin()
+	*ctx = context.WithValue(*ctx, "trx", trx)
 
 	return MyTransaction{db: trx}
 }
 
-func (trx MyTransaction) Commit() error {
+func (trx MyTransaction) Commit(ctx *context.Context) error {
+	trx.resetTrx(ctx)
 	return trx.db.Commit().Error
 }
 
-func (trx MyTransaction) Rollback() error {
+func (trx MyTransaction) Rollback(ctx *context.Context) error {
+	trx.resetTrx(ctx)
 	return trx.db.Rollback().Error
+}
+
+func (trx MyTransaction) resetTrx(ctx *context.Context) {
+	*ctx = context.WithValue(*ctx, "trx", nil)
 }
 
 func (r *WebhookRepo) getDb(ctx context.Context) *gorm.DB {
@@ -65,5 +72,5 @@ func (r *WebhookRepo) getDb(ctx context.Context) *gorm.DB {
 		return r.db.WithContext(ctx)
 	}
 
-	return tx.(MyTransaction).db
+	return tx.(*gorm.DB)
 }

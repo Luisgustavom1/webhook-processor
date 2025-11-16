@@ -47,4 +47,7 @@ var (
 	ErrWebhookEventNotFound = func(args ...interface{}) *WebhookError {
 		return New(newError("webhook event not found", args...), false)
 	}
+	ErrWebhookEventFails = func(args ...interface{}) *WebhookError {
+		return New(newError("webhook event fails and marked as failed", args...), false)
+	}
 )

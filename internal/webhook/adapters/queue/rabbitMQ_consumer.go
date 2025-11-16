@@ -26,9 +26,10 @@ func (c *RabbitMQConsumer) Consume(msg amqp091.Delivery) error {
 		return ack(msg)
 	}
 
-	wb_error := c.service.SendWebhook(wbEvent)
+	_, wb_error := c.service.SendWebhook(wbEvent)
+
 	if wb_error != nil {
-		log.Error("Error sending webhook", err)
+		log.Debug(wb_error.Error())
 		if wb_error.IsRetryable() {
 			return nack(msg)
 		}
@@ -36,11 +37,11 @@ func (c *RabbitMQConsumer) Consume(msg amqp091.Delivery) error {
 		return ack(msg)
 	}
 
-	log.Info("webhook sent")
 	return ack(msg)
 }
 
 func ack(msg amqp091.Delivery) error {
+	log.Debug("acknowledging message")
 	err := msg.Ack(false)
 	if err != nil {
 		log.Error("Error acknowledging message", err)
@@ -49,9 +50,10 @@ func ack(msg amqp091.Delivery) error {
 }
 
 func nack(msg amqp091.Delivery) error {
+	log.Debug("nacknowledging message")
 	err := msg.Nack(false, true)
 	if err != nil {
-		log.Error("Error acknowledging message", err)
+		log.Error("Error nacknowledging message", err)
 	}
 	return err
 }
