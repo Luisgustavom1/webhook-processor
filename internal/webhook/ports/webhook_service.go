@@ -8,7 +8,7 @@ import (
 )
 
 type WebhookServicePort interface {
-	SendWebhook(msg model.WebhookEventMessage) (*model.WebhookEvent, *model.WebhookError)
+	SendWebhook(ctx context.Context, msg model.WebhookEventMessage) (*model.WebhookEvent, *model.WebhookError)
 }
 
 type WebhookRepositoryPort interface {

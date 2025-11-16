@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -26,7 +27,8 @@ func (c *RabbitMQConsumer) Consume(msg amqp091.Delivery) error {
 		return ack(msg)
 	}
 
-	_, wb_error := c.service.SendWebhook(wbEvent)
+	ctx := context.Background()
+	_, wb_error := c.service.SendWebhook(ctx, wbEvent)
 
 	if wb_error != nil {
 		log.Debug(wb_error.Error())
@@ -42,6 +44,7 @@ func (c *RabbitMQConsumer) Consume(msg amqp091.Delivery) error {
 
 func ack(msg amqp091.Delivery) error {
 	log.Debug("acknowledging message")
+	msg.Headers["x-delay"] = 4000
 	err := msg.Ack(false)
 	if err != nil {
 		log.Error("Error acknowledging message", err)

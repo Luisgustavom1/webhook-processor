@@ -6,7 +6,8 @@ import (
 	"github.com/lib/pq"
 )
 
-const WEBHOOK_QUEUE = "email_queue"
+const WEBHOOK_QUEUE = "webhook_queue"
+const EXCHANGE_NAME = "webhook_exchange"
 const MAX_WEBHOOK_SEND_ATTEMPTS = 5
 
 type WebhookStatus string

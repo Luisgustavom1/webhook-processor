@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+type Response = http.Response
+
 type HTTPClient struct {
 	Client *http.Client
 }

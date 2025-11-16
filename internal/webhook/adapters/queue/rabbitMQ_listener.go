@@ -18,7 +18,8 @@ type RabbitMQConnector struct {
 }
 
 type RabbitMQConnOpts struct {
-	Queue_name string
+	Queue_name    string
+	Exchange_name string
 }
 
 func NewRabbitMQConnector(opts *RabbitMQConnOpts) *RabbitMQConnector {
@@ -40,13 +41,20 @@ func NewRabbitMQConnector(opts *RabbitMQConnOpts) *RabbitMQConnector {
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
 
+	err = ch.ExchangeDeclare(opts.Exchange_name, "x-delayed-message", true, false, false, false, amqp.Table{
+		"x-delayed-type": "fanout",
+	})
+	failOnError(err, "failed to declare exchange")
+
+	err = ch.QueueBind(opts.Queue_name, "webhook.process", opts.Exchange_name, false, nil)
+
 	q, err := ch.QueueDeclare(
 		opts.Queue_name, // name
 		true,            // durable
 		false,           // delete when unused
 		false,           // exclusive
 		false,           // no-wait
-		nil,             // arguments
+		nil,
 	)
 	failOnError(err, "Failed to declare a queue")
 

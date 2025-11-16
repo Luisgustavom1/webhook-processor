@@ -13,6 +13,7 @@ import (
 	wb "github.com/webhook-processor/internal/webhook/domain/service"
 
 	env "github.com/webhook-processor/internal/shared/env"
+	"github.com/webhook-processor/internal/shared/http"
 	log "github.com/webhook-processor/internal/shared/logger"
 	"github.com/webhook-processor/internal/shared/persistence/gorm"
 )
@@ -37,11 +38,13 @@ func main() {
 	log.Info("Starting Webhook Processor Consumer...")
 
 	connector := queue.NewRabbitMQConnector(&queue.RabbitMQConnOpts{
-		Queue_name: wb_model.WEBHOOK_QUEUE,
+		Queue_name:    wb_model.WEBHOOK_QUEUE,
+		Exchange_name: wb_model.EXCHANGE_NAME,
 	})
 
 	repo := wb_repo.NewWebhookRepo(db)
-	wb_service := wb.NewWebhookService(repo)
+	http_client := http.NewClient(http.ClientOpts{Timeout: time.Second * 5})
+	wb_service := wb.NewWebhookService(repo, http_client)
 	rabbitMQConsumer := wb_queue.NewRabbitMQConsumer(wb_service)
 
 	msgs := connector.Listen()
