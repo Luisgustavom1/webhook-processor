@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strconv"
 	"time"
 
 	"gorm.io/datatypes"
@@ -48,6 +49,18 @@ func (wb *WebhookEvent) ReachedMaxAttempts() bool {
 func (wb *WebhookEvent) CheckSuccessResponse(code int) bool {
 	// any 2xx is a success
 	return code/100 == 2
+}
+
+var RETRYABLE_STATUS_CODE = map[string]bool{
+	"408": true,
+	"429": true,
+	"502": true,
+	"503": true,
+	"504": true,
+}
+
+func (wb *WebhookEvent) IsRetryableCode() bool {
+	return RETRYABLE_STATUS_CODE[strconv.Itoa(wb.ResponseCode)]
 }
 
 func (wb *WebhookEvent) MarkAsDelivered() {

@@ -50,4 +50,7 @@ var (
 	ErrWebhookEventFails = func(args ...interface{}) *WebhookError {
 		return New(newError("webhook event fails and marked as failed", args...), false)
 	}
+	ErrWebhookEventWillRetry = func(args ...interface{}) *WebhookError {
+		return New(newError("we will try again to process the event code=%d", args...), true)
+	}
 )

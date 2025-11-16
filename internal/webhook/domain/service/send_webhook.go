@@ -151,7 +151,9 @@ func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) (event *mode
 		return event, nil
 	}
 
-	event.MarkAsFailed(responseBody)
+	if !event.IsRetryableCode() || event.ReachedMaxAttempts() {
+		event.MarkAsFailed(responseBody)
+	}
 
 	if err := s.repo.UpdateWebhookEventById(ctx, event.Id, *event); err != nil {
 		log.Error("update error", "err", err)
@@ -160,5 +162,9 @@ func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) (event *mode
 		})
 	}
 
-	return event, model.ErrWebhookEventFails()
+	if event.Status == model.WebhookEventsStatusFailed {
+		return event, model.ErrWebhookEventFails()
+	}
+
+	return event, model.ErrWebhookEventWillRetry(event.ResponseCode)
 }
