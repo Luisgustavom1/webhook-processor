@@ -10,7 +10,6 @@ type WebhookEventsStatus string
 
 const (
 	WebhookEventsStatusPending    WebhookEventsStatus = "pending"
-	WebhookEventsStatusSending    WebhookEventsStatus = "sending"
 	WebhookEventsStatusDelivered  WebhookEventsStatus = "delivered"
 	WebhookEventsStatusFailed     WebhookEventsStatus = "failed"
 	WebhookEventsStatusDeadLetter WebhookEventsStatus = "dead_letter"
