@@ -14,4 +14,5 @@ type WebhookRepositoryPort interface {
 	GetWebhookByID(ctx context.Context, id int) (*model.Webhook, error)
 	GetWebhookEventByID(ctx context.Context, id string) (*model.WebhookEvent, error)
 	UpdateWebhookEventById(ctx context.Context, id string, event model.WebhookEvent) error
+	Transaction(ctx context.Context, fn func() error) error
 }

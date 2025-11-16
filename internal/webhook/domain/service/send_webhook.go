@@ -15,69 +15,74 @@ import (
 	"github.com/webhook-processor/internal/webhook/domain/model"
 )
 
-func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) *model.WebhookError {
+func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) (errWb *model.WebhookError) {
 	ctx := context.Background()
+	var event *model.WebhookEvent
+	err := s.repo.Transaction(ctx, func() error {
+		event, err := s.repo.GetWebhookEventByID(ctx, msg.Id)
+		if err != nil {
+			log.Error("query error", "err", err.Error())
+			errWb = model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
 
-	event, err := s.repo.GetWebhookEventByID(ctx, msg.Id)
-	if err != nil {
-		log.Error("query error", "err", err.Error())
-		return model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+		if event == nil {
+			log.Info("no webhook found with id", "id", msg.Id)
+			errWb = model.ErrWebhookEventNotFound(map[string]interface{}{
+				"id": msg.Id,
+			})
+		}
 
-	if event == nil {
-		log.Info("no webhook found with id", "id", msg.Id)
-		return model.ErrWebhookEventNotFound(map[string]interface{}{
-			"id": msg.Id,
-		})
-	}
+		if !event.IsPending() {
+			log.Info("webhook not is pending", "status", event.Status)
+			errWb = model.ErrWebhookEventNotPending(map[string]interface{}{
+				"status": event.Status,
+			})
+		}
 
-	if !event.IsPending() {
-		log.Info("webhook not is pending", "status", event.Status)
-		return model.ErrWebhookEventNotPending(map[string]interface{}{
-			"status": event.Status,
-		})
-	}
+		if event.ReachedMaxAttempts() {
+			errWb = model.ErrWebhookEventReachedMaxAttempts(
+				map[string]interface{}{
+					"tries": event.Tries,
+				},
+			)
+		}
 
-	if event.ReachedMaxAttempts() {
-		return model.ErrWebhookEventReachedMaxAttempts(
-			map[string]interface{}{
-				"tries": event.Tries,
-			},
-		)
-	}
+		wb, err := s.repo.GetWebhookByID(ctx, event.WebhookId)
+		if err != nil {
+			log.Error("query error", "err", err.Error())
+			errWb = model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
 
-	wb, err := s.repo.GetWebhookByID(ctx, event.WebhookId)
-	if err != nil {
-		log.Error("query error", "err", err.Error())
-		return model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+		if wb == nil {
+			log.Info("no webhook found with id", "id", event.WebhookId)
+			errWb = model.ErrWebhookEventNotFound(map[string]interface{}{
+				"id": event.WebhookId,
+			})
+		}
 
-	if wb == nil {
-		log.Info("no webhook found with id", "id", event.WebhookId)
-		return model.ErrWebhookEventNotFound(map[string]interface{}{
-			"id": event.WebhookId,
-		})
-	}
+		if !wb.IsActive() {
+			errWb = model.ErrWebhookIsDisabled(map[string]interface{}{
+				"error": "webhook is not active",
+			})
+		}
 
-	if !wb.IsActive() {
-		return model.ErrWebhookIsDisabled(map[string]interface{}{
-			"error": "webhook is not active",
-		})
-	}
+		event.Tries++
+		if err := s.repo.UpdateWebhookEventById(ctx, event.Id, model.WebhookEvent{
+			Tries:  event.Tries,
+			Status: model.WebhookEventsStatusSending,
+		}); err != nil {
+			log.Error("update error", "err", err.Error())
+			errWb = model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
 
-	event.Tries++
-	if err := s.repo.UpdateWebhookEventById(ctx, event.Id, model.WebhookEvent{
-		Tries: event.Tries,
-	}); err != nil {
-		log.Error("update error", "err", err.Error())
-		return model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+		return nil
+	})
 
 	jsonBytes, err := json.Marshal(event.Payload)
 	if err != nil {
@@ -88,7 +93,6 @@ func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) *model.Webho
 	reader := bytes.NewReader(jsonBytes)
 
 	var responseBody map[string]interface{}
-
 	httpClient := http.NewClient(http.ClientOpts{Timeout: time.Second * 5})
 	res, err := httpClient.Post(wb.CallbackURL, "application/json", reader)
 
@@ -103,6 +107,7 @@ func (s *webhookService) SendWebhook(msg model.WebhookEventMessage) *model.Webho
 	}
 
 	if err != nil && !timeoutErr {
+		log.Error("webhook delivery failed", "err", err.Error())
 		return model.ErrWebhookEventDeliveryFailed(map[string]interface{}{
 			"error": err.Error(),
 		})
