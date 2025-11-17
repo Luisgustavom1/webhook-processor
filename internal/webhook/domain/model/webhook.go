@@ -8,6 +8,7 @@ import (
 
 const WEBHOOK_QUEUE = "webhook_queue"
 const EXCHANGE_NAME = "webhook_exchange"
+const ROUTING_KEY = "webhook.process"
 const MAX_WEBHOOK_SEND_ATTEMPTS = 5
 
 type WebhookStatus string

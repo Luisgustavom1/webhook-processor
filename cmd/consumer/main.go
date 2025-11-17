@@ -38,19 +38,23 @@ func main() {
 	log.Info("Starting Webhook Processor Consumer...")
 
 	connector := queue.NewRabbitMQConnector(&queue.RabbitMQConnOpts{
-		Queue_name:    wb_model.WEBHOOK_QUEUE,
-		Exchange_name: wb_model.EXCHANGE_NAME,
+		QueueName:    wb_model.WEBHOOK_QUEUE,
+		ExchangeName: wb_model.EXCHANGE_NAME,
+		RoutingKey:   wb_model.ROUTING_KEY,
 	})
 
 	repo := wb_repo.NewWebhookRepo(db)
 	http_client := http.NewClient(http.ClientOpts{Timeout: time.Second * 5})
 	wb_service := wb.NewWebhookService(repo, http_client)
-	rabbitMQConsumer := wb_queue.NewRabbitMQConsumer(wb_service)
+	rabbitMQConsumer := wb_queue.NewRabbitMQConsumer(wb_service, connector)
 
 	msgs := connector.Listen()
 	go func() {
 		for d := range msgs {
-			rabbitMQConsumer.Consume(d)
+			err := rabbitMQConsumer.Consume(d)
+			if err != nil {
+				log.Error("Error consuming message", err)
+			}
 		}
 	}()
 

@@ -1,11 +1,13 @@
 package queue
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
 
 	wb_model "github.com/webhook-processor/internal/webhook/domain/model"
+	ports "github.com/webhook-processor/internal/webhook/ports"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/webhook-processor/internal/shared/logger"
@@ -15,11 +17,13 @@ type RabbitMQConnector struct {
 	conn *amqp.Connection
 	ch   *amqp.Channel
 	q    amqp.Queue
+	opts *RabbitMQConnOpts
 }
 
 type RabbitMQConnOpts struct {
-	Queue_name    string
-	Exchange_name string
+	QueueName    string
+	ExchangeName string
+	RoutingKey   string
 }
 
 func NewRabbitMQConnector(opts *RabbitMQConnOpts) *RabbitMQConnector {
@@ -41,24 +45,25 @@ func NewRabbitMQConnector(opts *RabbitMQConnOpts) *RabbitMQConnector {
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
 
-	err = ch.ExchangeDeclare(opts.Exchange_name, "x-delayed-message", true, false, false, false, amqp.Table{
+	err = ch.ExchangeDeclare(opts.ExchangeName, "x-delayed-message", true, false, false, false, amqp.Table{
 		"x-delayed-type": "fanout",
 	})
 	failOnError(err, "failed to declare exchange")
 
-	err = ch.QueueBind(opts.Queue_name, "webhook.process", opts.Exchange_name, false, nil)
+	err = ch.QueueBind(opts.QueueName, opts.RoutingKey, opts.ExchangeName, false, nil)
 
 	q, err := ch.QueueDeclare(
-		opts.Queue_name, // name
-		true,            // durable
-		false,           // delete when unused
-		false,           // exclusive
-		false,           // no-wait
+		opts.QueueName,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
 		nil,
 	)
 	failOnError(err, "Failed to declare a queue")
 
 	return &RabbitMQConnector{
+		opts: opts,
 		conn: conn,
 		ch:   ch,
 		q:    q,
@@ -69,17 +74,35 @@ func (l *RabbitMQConnector) Listen() <-chan amqp.Delivery {
 	go startHealthCheck(l.ch)
 
 	msgs, err := l.ch.Consume(
-		l.q.Name, // queue
-		fmt.Sprintf("consumer::%s", wb_model.WEBHOOK_QUEUE), // consumer
+		l.q.Name,
+		fmt.Sprintf("consumer::%s", wb_model.WEBHOOK_QUEUE),
 		false, // auto-ack
 		false, // exclusive
 		false, // no supported
 		false, // no-wait
-		nil,   // args
+		nil,
 	)
 	failOnError(err, "Failed to register a consumer")
 
 	return msgs
+}
+
+func (l *RabbitMQConnector) Publish(ctx context.Context, msg []byte, opts ports.QueuePortPublishOpts) error {
+	err := l.ch.PublishWithContext(ctx,
+		l.opts.ExchangeName,
+		l.opts.RoutingKey,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        msg,
+			Headers: amqp.Table{
+				"x-delay": opts.Delay,
+			},
+		})
+	failOnError(err, "Failed to publish a message")
+
+	return err
 }
 
 func (l *RabbitMQConnector) Close() error {
