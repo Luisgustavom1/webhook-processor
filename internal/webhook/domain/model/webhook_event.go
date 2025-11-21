@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"time"
 
+	// TODO: not use gorm inside domain layer
 	"gorm.io/datatypes"
 )
 
@@ -16,7 +17,7 @@ const (
 	WebhookEventsStatusDeadLetter WebhookEventsStatus = "dead_letter"
 )
 
-type object = map[string]interface{}
+type Object = map[string]interface{}
 
 type WebhookEventMessage struct {
 	Id string `json:"id"`
@@ -26,9 +27,9 @@ type WebhookEvent struct {
 	Id           string                     `json:"id"`
 	WebhookId    int                        `json:"webhook_id"`
 	EventType    string                     `json:"event_type"`
-	Payload      datatypes.JSONType[object] `json:"payload"`
-	LastError    datatypes.JSONType[object] `json:"last_error"`
-	ResponseBody datatypes.JSONType[object] `json:"response_body"`
+	Payload      datatypes.JSONType[Object] `json:"payload"`
+	LastError    datatypes.JSONType[Object] `json:"last_error"`
+	ResponseBody datatypes.JSONType[Object] `json:"response_body"`
 	ResponseCode int                        `json:"response_code"`
 	Tries        int                        `json:"tries"`
 	Status       WebhookEventsStatus        `json:"status"`
@@ -74,6 +75,6 @@ func (wb *WebhookEvent) MarkAsFailed(error map[string]interface{}) {
 	wb.FailedAt = time.Now()
 }
 
-func (wb *WebhookEvent) SetResponseBody(responseBody object) {
+func (wb *WebhookEvent) SetResponseBody(responseBody Object) {
 	wb.ResponseBody = datatypes.NewJSONType(responseBody)
 }

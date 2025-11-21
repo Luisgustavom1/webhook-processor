@@ -3,8 +3,11 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 
@@ -42,7 +45,14 @@ func (s *webhookService) SendWebhook(ctx context.Context, msg model.WebhookEvent
 	}
 
 	reader := bytes.NewReader(jsonBytes)
-	res, err := s.httpClient.Post(wb.CallbackURL, "application/json", reader)
+	signature, err := s.generateHMACSignature(event.Payload.Data(), wb.Secret)
+	if err != nil {
+		return s.markAsDeadLetter(ctx, event, err)
+	}
+
+	res, err := s.httpClient.Post(wb.CallbackURL, "application/json", reader, map[string]string{
+		"x-signature": signature,
+	})
 
 	responseBody, responseCode, netErr := s.parseHttpResponse(res, err)
 	event.ResponseCode = responseCode
@@ -159,4 +169,16 @@ func (s *webhookService) markAsDeadLetter(ctx context.Context, event *model.Webh
 	return event, model.ErrWebhookEventPayloadSerializationFailed(map[string]interface{}{
 		"error": serializationError.Error(),
 	})
+}
+
+func (s *webhookService) generateHMACSignature(payload model.Object, secret string) (string, error) {
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	sig := hmac.New(sha256.New, []byte(secret))
+	sig.Write(jsonBytes)
+
+	return fmt.Sprintf("sha256=%x", sig.Sum(nil)), nil
 }
