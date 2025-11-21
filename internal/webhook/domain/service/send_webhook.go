@@ -23,22 +23,6 @@ func (s *webhookService) SendWebhook(ctx context.Context, msg model.WebhookEvent
 		return event, errWb
 	}
 
-	trx := s.repo.Transaction(&ctx)
-	defer trx.Rollback(&ctx)
-
-	event.Tries++
-	if err := s.repo.UpdateWebhookEventById(ctx, event.Id, model.WebhookEvent{
-		Tries: event.Tries,
-	}); err != nil {
-		log.Error("update error on tries increment", "err", err)
-		return event, model.ErrWebhookEventDeliveryFailed(map[string]interface{}{"error": err.Error()})
-	}
-
-	if err := trx.Commit(&ctx); err != nil {
-		log.Error("commit error on tries increment", "err", err.Error())
-		return event, model.ErrWebhookEventDeliveryFailed(map[string]interface{}{"error": err.Error()})
-	}
-
 	jsonBytes, err := json.Marshal(event.Payload)
 	if err != nil {
 		return s.markAsDeadLetter(ctx, event, err)
@@ -53,6 +37,7 @@ func (s *webhookService) SendWebhook(ctx context.Context, msg model.WebhookEvent
 	res, err := s.httpClient.Post(wb.CallbackURL, "application/json", reader, map[string]string{
 		"x-signature": signature,
 	})
+	event.Tries++
 
 	responseBody, responseCode, netErr := s.parseHttpResponse(res, err)
 	event.ResponseCode = responseCode
